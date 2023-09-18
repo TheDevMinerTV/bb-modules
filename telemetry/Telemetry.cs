@@ -20,7 +20,7 @@ namespace DevMinersBBModules;
 ///   Discord: @anna_devminer
 public class Telemetry : BattleBitModule
 {
-    public Configuration Configuration { get; set; }
+    public static Configuration Configuration { get; set; } = null!;
     private readonly FieldInfo _modulesField;
     private Client? _client;
 
