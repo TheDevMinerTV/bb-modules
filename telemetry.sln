@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "bb-modules", "bb-modules\telemetry.csproj", "{2A7A4106-2D30-4077-AED3-87565B385F54}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "bb-modules", "telemetry\telemetry.csproj", "{2A7A4106-2D30-4077-AED3-87565B385F54}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
