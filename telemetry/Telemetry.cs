@@ -12,7 +12,6 @@ using BBRAPIModules;
 
 namespace DevMinersBBModules;
 
-
 /// Uploads the configured module list to a <see cref="https://github.com/TheDevMinerTV/bb-telemetry-api/pkgs/container/bb-telemetry-api">telemetry server</see>.
 /// 
 /// Developer contact:
@@ -41,12 +40,6 @@ public class Telemetry : BattleBitModule
         var modules = GetModules();
         if (modules == null) throw new Exception("Could not get modules");
 
-        var modulesToReport = (from module in modules
-            let moduleName = module.GetType().ToString()
-            where Configuration.Modules.Contains(moduleName)
-            select module).ToList();
-        if (!modulesToReport.Contains(this)) modulesToReport.Add(this);
-
         var moduleInfos = (from module in modules
             let moduleName = module.GetType().ToString()
             let version = module.GetType().Assembly.GetName().Version!.ToString()
@@ -69,8 +62,7 @@ public class Telemetry : BattleBitModule
 
 public class Configuration : ModuleConfiguration
 {
-    public List<string> Modules { get; } = new();
-    // "Official" server
+    // "Official" server, operated by @anna_devminer
     public string TelemetryEndpoint = "tcp://raw.devminer.xyz:65500";
 }
 
@@ -198,11 +190,12 @@ internal readonly struct ModuleInfo
         _name = name;
         _version = version;
     }
-    
+
     public override string ToString() => $"{_name} {_version}";
+
     public int GetEncodedLength() =>
         NetworkUtils.EncodedStringLength(_name) + NetworkUtils.EncodedStringLength(_version);
-    
+
     public byte[] Encode()
     {
         var buf = new byte[GetEncodedLength()];
@@ -218,7 +211,7 @@ internal readonly struct ModuleInfo
 internal static class NetworkUtils
 {
     public static int EncodedStringLength(string s) => 2 + Encoding.UTF8.GetByteCount(s);
-    
+
     public static byte[] EncodeString(string s)
     {
         var len = Encoding.UTF8.GetByteCount(s);
@@ -254,7 +247,7 @@ internal class WrappedPacket
     private IPacket Inner { get; }
 
     public WrappedPacket(IPacket inner) => Inner = inner;
-    
+
     public byte[] Encode()
     {
         var inner = Inner.Encode();
@@ -278,7 +271,7 @@ internal class HandshakeRequestPacket : IPacket
 
     public HandshakeRequestPacket(List<ModuleInfo> modules) => Modules = modules;
     public PacketType Type() => PacketType.HandshakeRequestPacket;
-    
+
     public byte[] Encode()
     {
         var moduleCount = Modules.Count;
@@ -306,7 +299,7 @@ internal class HandshakeResponsePacket
     public byte[] Key { get; }
 
     private HandshakeResponsePacket(byte[] key) => Key = key;
-    
+
     public static HandshakeResponsePacket Decode(byte[] buf)
     {
         var key = new byte[32];
