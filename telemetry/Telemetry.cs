@@ -117,7 +117,7 @@ class Client
         {
             if (_connectionCancellation.IsCancellationRequested) return;
 
-            var n = await s.ReadAsync(buffer);
+            var n = await s.ReadAsync(buffer, 0, buffer.Length, _connectionCancellation.Token);
             if (n <= 0)
             {
                 _connectionCancellation.Cancel();
