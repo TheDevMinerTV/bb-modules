@@ -1,6 +1,8 @@
-﻿using System;
+using System;
 using System.Buffers.Binary;
+using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.Sockets;
 using System.Reflection;
@@ -8,63 +10,101 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using BattleBitAPI.Common;
 using BBRAPIModules;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace DevMinersBBModules;
 
 /// Uploads the configured module list to a <see cref="https://github.com/TheDevMinerTV/bb-telemetry-api/pkgs/container/bb-telemetry-api">telemetry server</see>.
-/// 
+/// Version 1.0.0
 /// Developer contact:
 ///   Email: devminer@devminer.xyz
 ///   Discord: @anna_devminer
+[Module("Telemetry", "1.0.0")]
 public class Telemetry : BattleBitModule
 {
-    public static Configuration Configuration { get; set; } = null!;
-    private readonly FieldInfo _modulesField;
-    private Client? _client;
-
-    public Telemetry()
-    {
-        var modulesField =
-            typeof(RunnerServer).GetField("modules", BindingFlags.NonPublic | BindingFlags.Instance);
-        if (modulesField == null)
-            throw new Exception("Could not find modules field on RunnerServer");
-
-        _modulesField = modulesField;
-    }
-
-    public override async Task OnConnected()
-    {
-        if (Configuration == null) throw new Exception("Configuration isn't loaded yet");
-
-        var modules = GetModules();
-        if (modules == null) throw new Exception("Could not get modules");
-
-        var moduleInfos = (from module in modules
-            let moduleName = module.GetType().ToString()
-            let version = module.GetType().Assembly.GetName().Version!.ToString()
-            select new ModuleInfo(moduleName, version)).ToList();
-
-        var uri = new Uri(Configuration.TelemetryEndpoint);
-        _client = new Client(uri, moduleInfos);
-        await _client.Start();
-    }
-
-    public override Task OnDisconnected()
-    {
-        _client?.Stop();
-
-        return Task.CompletedTask;
-    }
-
-    private List<BattleBitModule> GetModules() => (List<BattleBitModule>)_modulesField.GetValue(Server)!;
-}
-
-public class Configuration : ModuleConfiguration
-{
+    //internal static Type? _moduleType = Assembly.GetEntryAssembly()?.GetType("BattleBitAPIRunner.Module");
+    //private static FieldInfo? _modulesField = _moduleType?.GetField("Modules", BindingFlags.NonPublic | BindingFlags.Static);
+    private static Client? _client;
     // "Official" server, operated by @anna_devminer
-    public string TelemetryEndpoint = "tcp://raw.devminer.xyz:65500";
+    internal const string TelemetryEndpoint = "raw.devminer.xyz:65502";
+
+    public override void OnModuleUnloading() {
+        if (_client is null) return;
+        _client?.Stop();
+        _client = null;
+    }
+
+    public partial class AppSettings {
+        public string? ModulesPath { get; set; }
+        public List<string>? Modules { get; set; }
+    }
+
+    internal List<FileInfo> GetModuleFilesFromFolder(DirectoryInfo directory) {
+        return directory.GetFiles("*.cs", SearchOption.TopDirectoryOnly).ToList();
+    }
+    internal List<FileInfo> GetModuleFiles() {
+        var moduleFiles = new List<FileInfo>();
+        var appSettings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText("appsettings.json"));
+        if (appSettings?.ModulesPath != null) {
+            moduleFiles.AddRange(GetModuleFilesFromFolder(new DirectoryInfo(appSettings.ModulesPath)));
+        }
+        if (appSettings?.Modules != null) {
+            foreach (var module in appSettings.Modules) {
+                var file = new FileInfo(module);
+                if (!file.Exists) continue;
+                moduleFiles.Add(file);
+            }
+        }
+        return moduleFiles;
+    }
+    internal string? GetVersionFromFile(FileInfo file) {
+        var text = File.ReadAllText(file.FullName);
+        string pattern = @"(?i)version\s*[:= ]\s*([0-9\.]+[a-z]*)";
+        Regex regex = new Regex(pattern);
+        MatchCollection matches = regex.Matches(text);
+        foreach (Match match in matches) {
+            return match.Groups[1].Value;
+        }
+        return null;
+    }
+    internal string GetHashFromFile(FileInfo file) {
+        using (var md5 = MD5.Create()) {
+            using (var stream = file.OpenRead()) {
+                var hash = md5.ComputeHash(stream);
+                var hashString = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                return hashString;
+            }
+        }
+    }
+    internal List<ModuleInfo> GetModuleInfoFromFiles(List<FileInfo> files) {
+        var moduleInfos = new List<ModuleInfo>();
+        foreach (var file in files) {
+            if (file.Extension.ToLowerInvariant() != ".cs") continue;
+            moduleInfos.Add(new ModuleInfo(name: Path.GetFileNameWithoutExtension(file.Name), version: GetVersionFromFile(file) ?? "Unknown", hash: GetHashFromFile(file)));
+        }
+        return moduleInfos;
+    }
+
+    internal static void Log(object msg) {
+        Console.WriteLine($"[{DateTime.Now.ToString("HH:mm:ss")}]  Telemetry > {msg.ToString()}");
+    }
+
+    public override void OnModulesLoaded() {
+        if (_client is not null) return;
+
+        var uri = new Uri("tcp://"+TelemetryEndpoint);
+        Log($"Getting list of installed modules");
+        var modules = GetModuleInfoFromFiles(GetModuleFiles());
+        Log($"Got list of {modules.Count} installed modules");
+        _client = new Client(uri, modules);
+        _client.Start().Wait();
+    }
 }
+
+#region networking
 
 class Client
 {
@@ -97,7 +137,9 @@ class Client
     {
         var s = _socket.GetStream();
         var p = new WrappedPacket(packet);
-        await s.WriteAsync(p.Encode(), _connectionCancellation.Token);
+        var encoded = p.Encode();
+        Console.WriteLine(BitConverter.ToString(encoded).Replace("-", string.Empty));
+        await s.WriteAsync(encoded, _connectionCancellation.Token);
     }
 
     private async Task ReadLoop()
@@ -180,21 +222,24 @@ class Client
     }
 }
 
-internal readonly struct ModuleInfo
-{
+internal readonly struct ModuleInfo {
     private readonly string _name;
     private readonly string _version;
+    private readonly string _hash;
 
-    public ModuleInfo(string name, string version)
+    public ModuleInfo(string name, string version, string hash)
     {
         _name = name;
         _version = version;
+        _hash = hash;
     }
 
-    public override string ToString() => $"{_name} {_version}";
+    public override string ToString() => $"{_name} {_version} {_hash}";
 
     public int GetEncodedLength() =>
-        NetworkUtils.EncodedStringLength(_name) + NetworkUtils.EncodedStringLength(_version);
+        NetworkUtils.EncodedStringLength(_name) +
+        NetworkUtils.EncodedStringLength(_version) +
+        NetworkUtils.EncodedStringLength(_hash);
 
     public byte[] Encode()
     {
@@ -202,7 +247,14 @@ internal readonly struct ModuleInfo
 
         var buf2 = NetworkUtils.EncodeString(_name);
         buf2.CopyTo(buf, 0);
-        NetworkUtils.EncodeString(_version).CopyTo(buf, buf2.Length);
+        int currentPosition = buf2.Length;
+
+        var buf3 = NetworkUtils.EncodeString(_version);
+        buf3.CopyTo(buf, currentPosition);
+        currentPosition += buf3.Length;
+
+        var buf4 = NetworkUtils.EncodeString(_hash);
+        buf4.CopyTo(buf, currentPosition);
 
         return buf;
     }
@@ -322,3 +374,5 @@ internal class HeartbeatRequestPacket : IPacket
     public PacketType Type() => PacketType.HeartbeatRequestPacket;
     public byte[] Encode() => Array.Empty<byte>();
 }
+
+#endregion
