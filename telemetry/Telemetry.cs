@@ -18,11 +18,11 @@ using System.Text.RegularExpressions;
 namespace DevMinersBBModules;
 
 /// Uploads the configured module list to a <see cref="https://github.com/TheDevMinerTV/bb-telemetry-api/pkgs/container/bb-telemetry-api">telemetry server</see>.
-/// Version 1.0.0
+/// Version 1.1.0
 /// Developer contact:
 ///   Email: devminer@devminer.xyz
 ///   Discord: @anna_devminer
-[Module("Telemetry", "1.0.0")]
+[Module("Telemetry", "1.1.0")]
 public class Telemetry : BattleBitModule
 {
     //internal static Type? _moduleType = Assembly.GetEntryAssembly()?.GetType("BattleBitAPIRunner.Module");
