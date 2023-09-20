@@ -137,9 +137,7 @@ class Client
     {
         var s = _socket.GetStream();
         var p = new WrappedPacket(packet);
-        var encoded = p.Encode();
-        Console.WriteLine(BitConverter.ToString(encoded).Replace("-", string.Empty));
-        await s.WriteAsync(encoded, _connectionCancellation.Token);
+        await s.WriteAsync(p.Encode(), _connectionCancellation.Token);
     }
 
     private async Task ReadLoop()
