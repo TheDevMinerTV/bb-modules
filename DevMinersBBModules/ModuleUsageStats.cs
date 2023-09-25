@@ -32,7 +32,7 @@ public class ModuleUsageStats : BattleBitModule
     {
         if (_client is null) return;
 
-        _client?.Stop();
+        _client.Stop();
         _client = null;
     }
 
@@ -85,8 +85,7 @@ public class ModuleUsageStats : BattleBitModule
         select new ModuleInfo(name: Path.GetFileNameWithoutExtension(file.Name),
             version: GetVersionFromFile(file) ?? "Unknown", hash: GetHashFromFile(file))).ToList();
 
-    public override void OnModulesLoaded()
-    {
+    private static void Initialize() {
         if (_client is not null) return;
 
         var uri = new Uri("tcp://" + Endpoint);
@@ -96,6 +95,13 @@ public class ModuleUsageStats : BattleBitModule
         Utils.Log($"Got list of {modules.Count} installed modules");
         _client = new Client(uri, modules);
         _client.Start();
+    }
+
+    public ModuleUsageStats() => Initialize();
+    public override void OnModulesLoaded() => Initialize();
+    public override Task OnConnected() {
+        Initialize();
+        return Task.CompletedTask;
     }
 }
 
