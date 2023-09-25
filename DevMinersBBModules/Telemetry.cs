@@ -107,8 +107,6 @@ internal class Client
     private readonly Uri _uri;
     private readonly List<ModuleInfo> _modules;
     private CancellationTokenSource? _connectionCancellation;
-    private bool _wasConnected;
-    private bool _hadInitialConnection;
 
     private delegate Task DisconnectHandler();
 
@@ -127,11 +125,6 @@ internal class Client
             var rand = new Random();
             var delay = rand.Next(5000, 10000);
 
-            if (_wasConnected)
-                Utils.Log("Client disconnected, attempting to reconnect in " + delay + "ms in the background");
-
-            _wasConnected = false;
-
             Task.Delay(delay).Wait();
 
             return _init();
@@ -147,25 +140,14 @@ internal class Client
 
         _socket = new TcpClient();
 
-        if (!_wasConnected && !_hadInitialConnection) Utils.Log("Client connecting...");
-
         try
         {
             await _socket.ConnectAsync(_uri.Host, _uri.Port);
         }
         catch (SocketException e)
         {
-            if (!_wasConnected && !_hadInitialConnection) Utils.Log($"Client failed to connect: {e.Message}");
-
             _connectionCancellation.Cancel();
             return;
-        }
-
-        _wasConnected = true;
-        if (!_hadInitialConnection)
-        {
-            _hadInitialConnection = true;
-            Utils.Log("Client connected");
         }
 
         await SendPacket(new HandshakeRequestPacket(_modules));
@@ -240,8 +222,6 @@ internal class Client
 
                 case PacketType.StartResponsePacket:
                 {
-                    Utils.Log("Client authenticated");
-
                     Task.Run(PingLoop, _connectionCancellation.Token);
 
                     break;
