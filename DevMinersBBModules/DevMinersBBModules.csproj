@@ -1,13 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
     <PropertyGroup>
         <TargetFramework>net6.0</TargetFramework>
         <ImplicitUsings>disable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <RootNamespace>DevMinersBBModules</RootNamespace>
     </PropertyGroup>
-
     <ItemGroup>
       <PackageReference Include="BBRAPIModules" Version="1.0.0" />
     </ItemGroup>
-
 </Project>

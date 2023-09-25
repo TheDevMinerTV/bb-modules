@@ -1,6 +1,5 @@
 using System;
 using System.Buffers.Binary;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -8,110 +7,112 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using BattleBitAPI.Common;
-using BBRAPIModules;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using BBRAPIModules;
 
 namespace DevMinersBBModules;
 
-/// Uploads the configured module list to a <see cref="https://github.com/TheDevMinerTV/bb-telemetry-api/pkgs/container/bb-telemetry-api">telemetry server</see>.
-/// Version 1.1.0
+/// Uploads the currently loaded module list to a <see cref="https://github.com/TheDevMinerTV/bb-telemetry-api/pkgs/container/bb-telemetry-api">telemetry server</see>.
+/// 
 /// Developer contact:
 ///   Email: devminer@devminer.xyz
 ///   Discord: @anna_devminer
-[Module("Telemetry", "1.1.0")]
+[Module("Uploads the currently loaded module list to a telemetry server.", "2.0.0")]
 public class Telemetry : BattleBitModule
 {
-    //internal static Type? _moduleType = Assembly.GetEntryAssembly()?.GetType("BattleBitAPIRunner.Module");
-    //private static FieldInfo? _modulesField = _moduleType?.GetField("Modules", BindingFlags.NonPublic | BindingFlags.Static);
     private static Client? _client;
-    // "Official" server, operated by @anna_devminer
-    internal const string TelemetryEndpoint = "raw.devminer.xyz:65502";
 
-    public override void OnModuleUnloading() {
+    // "Official" server, operated by @anna_devminer
+    private const string TelemetryEndpoint = "raw.devminer.xyz:65502";
+
+    public override void OnModuleUnloading()
+    {
         if (_client is null) return;
+
         _client?.Stop();
         _client = null;
     }
 
-    public partial class AppSettings {
+    private class AppSettings
+    {
         public string? ModulesPath { get; set; }
         public List<string>? Modules { get; set; }
     }
 
-    internal List<FileInfo> GetModuleFilesFromFolder(DirectoryInfo directory) {
-        return directory.GetFiles("*.cs", SearchOption.TopDirectoryOnly).ToList();
-    }
-    internal List<FileInfo> GetModuleFiles() {
+    private static IEnumerable<FileInfo> GetModuleFilesFromFolder(DirectoryInfo directory) =>
+        directory.GetFiles("*.cs", SearchOption.TopDirectoryOnly).ToList();
+
+    private static IEnumerable<FileInfo> GetModuleFiles()
+    {
         var moduleFiles = new List<FileInfo>();
         var appSettings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText("appsettings.json"));
-        if (appSettings?.ModulesPath != null) {
+
+        if (appSettings?.ModulesPath != null)
             moduleFiles.AddRange(GetModuleFilesFromFolder(new DirectoryInfo(appSettings.ModulesPath)));
-        }
-        if (appSettings?.Modules != null) {
-            foreach (var module in appSettings.Modules) {
-                var file = new FileInfo(module);
-                if (!file.Exists) continue;
-                moduleFiles.Add(file);
-            }
-        }
+
+        if (appSettings?.Modules == null) return moduleFiles;
+
+        moduleFiles.AddRange(appSettings.Modules.Select(module => new FileInfo(module)).Where(file => file.Exists));
+
         return moduleFiles;
     }
-    internal string? GetVersionFromFile(FileInfo file) {
+
+    private static string? GetVersionFromFile(FileSystemInfo file)
+    {
         var text = File.ReadAllText(file.FullName);
-        string pattern = @"(?i)version\s*[:= ]\s*([0-9\.]+[a-z]*)";
-        Regex regex = new Regex(pattern);
-        MatchCollection matches = regex.Matches(text);
-        foreach (Match match in matches) {
-            return match.Groups[1].Value;
-        }
+        var regex = new Regex(@"\[Module\("".*"", ""(.*)""\)\]");
+        var matches = regex.Matches(text);
+
+        foreach (Match match in matches) return match.Groups[1].Value;
+
         return null;
     }
-    internal string GetHashFromFile(FileInfo file) {
-        using (var md5 = MD5.Create()) {
-            using (var stream = file.OpenRead()) {
-                var hash = md5.ComputeHash(stream);
-                var hashString = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
-                return hashString;
-            }
-        }
-    }
-    internal List<ModuleInfo> GetModuleInfoFromFiles(List<FileInfo> files) {
-        var moduleInfos = new List<ModuleInfo>();
-        foreach (var file in files) {
-            if (file.Extension.ToLowerInvariant() != ".cs") continue;
-            moduleInfos.Add(new ModuleInfo(name: Path.GetFileNameWithoutExtension(file.Name), version: GetVersionFromFile(file) ?? "Unknown", hash: GetHashFromFile(file)));
-        }
-        return moduleInfos;
+
+    private static string GetHashFromFile(FileInfo file)
+    {
+        using var md5 = MD5.Create();
+        using var stream = file.OpenRead();
+
+        var hash = md5.ComputeHash(stream);
+        return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
     }
 
-    internal static void Log(object msg) {
-        Console.WriteLine($"[{DateTime.Now.ToString("HH:mm:ss")}]  Telemetry > {msg.ToString()}");
-    }
+    private static List<ModuleInfo> GetModuleInfoFromFiles(IEnumerable<FileInfo> files) => (from file in files
+        where file.Extension.ToLowerInvariant() == ".cs"
+        select new ModuleInfo(name: Path.GetFileNameWithoutExtension(file.Name),
+            version: GetVersionFromFile(file) ?? "Unknown", hash: GetHashFromFile(file))).ToList();
 
-    public override void OnModulesLoaded() {
+    public override void OnModulesLoaded()
+    {
         if (_client is not null) return;
 
-        var uri = new Uri("tcp://"+TelemetryEndpoint);
-        Log($"Getting list of installed modules");
+        var uri = new Uri("tcp://" + TelemetryEndpoint);
+        Utils.Log("Getting list of installed modules");
         var modules = GetModuleInfoFromFiles(GetModuleFiles());
-        Log($"Got list of {modules.Count} installed modules");
+
+        Utils.Log($"Got list of {modules.Count} installed modules");
         _client = new Client(uri, modules);
-        _client.Start().Wait();
+        _client.Start();
     }
 }
 
 #region networking
 
-class Client
+internal class Client
 {
-    private readonly TcpClient _socket = new();
+    private TcpClient? _socket;
     private readonly Uri _uri;
     private readonly List<ModuleInfo> _modules;
-    private readonly CancellationTokenSource _connectionCancellation = new();
+    private CancellationTokenSource? _connectionCancellation;
+    private bool _wasConnected;
+    private bool _hadInitialConnection;
+
+    private delegate Task DisconnectHandler();
+
+    private event DisconnectHandler? Disconnected;
 
     public Client(Uri uri, List<ModuleInfo> modules)
     {
@@ -119,22 +120,76 @@ class Client
         _modules = modules;
     }
 
-    public async Task Start()
+    public Task Start()
     {
-        await _socket.ConnectAsync(_uri.Host, _uri.Port);
+        Disconnected += () =>
+        {
+            var rand = new Random();
+            var delay = rand.Next(5000, 10000);
+
+            if (_wasConnected)
+                Utils.Log("Client disconnected, attempting to reconnect in " + delay + "ms in the background");
+
+            _wasConnected = false;
+
+            Task.Delay(delay).Wait();
+
+            return _init();
+        };
+
+        return _init();
+    }
+
+    private async Task _init()
+    {
+        _connectionCancellation = new CancellationTokenSource();
+        _connectionCancellation.Token.Register(OnSocketDisconnectedCleanup);
+
+        _socket = new TcpClient();
+
+        if (!_wasConnected && !_hadInitialConnection) Utils.Log("Client connecting...");
+
+        try
+        {
+            await _socket.ConnectAsync(_uri.Host, _uri.Port);
+        }
+        catch (SocketException e)
+        {
+            if (!_wasConnected && !_hadInitialConnection) Utils.Log($"Client failed to connect: {e.Message}");
+
+            _connectionCancellation.Cancel();
+            return;
+        }
+
+        _wasConnected = true;
+        if (!_hadInitialConnection)
+        {
+            _hadInitialConnection = true;
+            Utils.Log("Client connected");
+        }
 
         await SendPacket(new HandshakeRequestPacket(_modules));
 
         Task.Run(ReadLoop, _connectionCancellation.Token);
     }
 
-    public void Stop()
+    private void OnSocketDisconnectedCleanup()
     {
-        _connectionCancellation.Cancel();
+        if (_socket is null) return;
+
+        _socket?.Dispose();
+        _socket = null;
+
+        Disconnected?.Invoke().Wait();
     }
+
+    public void Stop() => _connectionCancellation?.Cancel();
 
     private async Task SendPacket(IPacket packet)
     {
+        if (_connectionCancellation is null || _connectionCancellation.IsCancellationRequested || _socket is null)
+            return;
+
         var s = _socket.GetStream();
         var p = new WrappedPacket(packet);
         await s.WriteAsync(p.Encode(), _connectionCancellation.Token);
@@ -142,13 +197,14 @@ class Client
 
     private async Task ReadLoop()
     {
-        var s = _socket.GetStream();
         var buffer = new byte[4096];
 
         while (true)
         {
-            if (_connectionCancellation.IsCancellationRequested) return;
+            if (_connectionCancellation is null || _connectionCancellation.IsCancellationRequested || _socket is null)
+                return;
 
+            var s = _socket.GetStream();
             var n = await s.ReadAsync(buffer, 0, buffer.Length, _connectionCancellation.Token);
             if (n <= 0)
             {
@@ -184,7 +240,7 @@ class Client
 
                 case PacketType.StartResponsePacket:
                 {
-                    Console.WriteLine("Telemetry client connected");
+                    Utils.Log("Client authenticated");
 
                     Task.Run(PingLoop, _connectionCancellation.Token);
 
@@ -194,15 +250,9 @@ class Client
                 case PacketType.HandshakeRequestPacket:
                 case PacketType.StartRequestPacket:
                 case PacketType.HeartbeatRequestPacket:
+                default:
                     // if this happens, then the server fucked up LOL
                     break;
-
-                default:
-                {
-                    Console.WriteLine($"Unknown packet type: {packetType}");
-
-                    break;
-                }
             }
         }
     }
@@ -211,7 +261,7 @@ class Client
     {
         while (true)
         {
-            if (_connectionCancellation.IsCancellationRequested) return;
+            if (_connectionCancellation is { IsCancellationRequested: true }) return;
 
             await SendPacket(new HeartbeatRequestPacket());
 
@@ -220,7 +270,8 @@ class Client
     }
 }
 
-internal readonly struct ModuleInfo {
+internal readonly struct ModuleInfo
+{
     private readonly string _name;
     private readonly string _version;
     private readonly string _hash;
@@ -235,34 +286,37 @@ internal readonly struct ModuleInfo {
     public override string ToString() => $"{_name} {_version} {_hash}";
 
     public int GetEncodedLength() =>
-        NetworkUtils.EncodedStringLength(_name) +
-        NetworkUtils.EncodedStringLength(_version) +
-        NetworkUtils.EncodedStringLength(_hash);
+        Utils.EncodedStringLength(_name) +
+        Utils.EncodedStringLength(_version) +
+        Utils.EncodedStringLength(_hash);
 
     public byte[] Encode()
     {
         var buf = new byte[GetEncodedLength()];
 
-        var buf2 = NetworkUtils.EncodeString(_name);
+        var buf2 = Utils.EncodeString(_name);
         buf2.CopyTo(buf, 0);
-        int currentPosition = buf2.Length;
+        var currentPosition = buf2.Length;
 
-        var buf3 = NetworkUtils.EncodeString(_version);
+        var buf3 = Utils.EncodeString(_version);
         buf3.CopyTo(buf, currentPosition);
         currentPosition += buf3.Length;
 
-        var buf4 = NetworkUtils.EncodeString(_hash);
+        var buf4 = Utils.EncodeString(_hash);
         buf4.CopyTo(buf, currentPosition);
 
         return buf;
     }
 }
 
-internal static class NetworkUtils
+internal static class Utils
 {
-    public static int EncodedStringLength(string s) => 2 + Encoding.UTF8.GetByteCount(s);
+    internal static void Log(object msg) => Console.WriteLine($"[{DateTime.Now:HH:mm:ss}]  Telemetry > {msg}");
 
-    public static byte[] EncodeString(string s)
+
+    internal static int EncodedStringLength(string s) => 2 + Encoding.UTF8.GetByteCount(s);
+
+    internal static byte[] EncodeString(string s)
     {
         var len = Encoding.UTF8.GetByteCount(s);
         var buf = new byte[2 + len];
@@ -273,6 +327,8 @@ internal static class NetworkUtils
         return buf;
     }
 }
+
+#region packets
 
 internal enum PacketType : byte
 {
@@ -372,5 +428,7 @@ internal class HeartbeatRequestPacket : IPacket
     public PacketType Type() => PacketType.HeartbeatRequestPacket;
     public byte[] Encode() => Array.Empty<byte>();
 }
+
+#endregion
 
 #endregion
