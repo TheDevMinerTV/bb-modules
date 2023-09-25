@@ -87,6 +87,7 @@ public class ModuleUsageStats : BattleBitModule
 
     public void Initialize() {
         if (_client is not null) return;
+
         var uri = new Uri("tcp://" + Endpoint);
         Utils.Log("Getting list of installed modules");
         var modules = GetModuleInfoFromFiles(GetModuleFiles());
