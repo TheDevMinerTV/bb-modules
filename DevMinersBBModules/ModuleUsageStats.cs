@@ -21,12 +21,12 @@ namespace DevMinersBBModules;
 ///   Email: devminer@devminer.xyz
 ///   Discord: @anna_devminer
 [Module("Uploads the currently loaded module list to a telemetry server.", "2.0.0")]
-public class Telemetry : BattleBitModule
+public class ModuleUsageStats : BattleBitModule
 {
     private static Client? _client;
 
     // "Official" server, operated by @anna_devminer
-    private const string TelemetryEndpoint = "raw.devminer.xyz:65502";
+    private const string Endpoint = "raw.devminer.xyz:65502";
 
     public override void OnModuleUnloading()
     {
@@ -89,7 +89,7 @@ public class Telemetry : BattleBitModule
     {
         if (_client is not null) return;
 
-        var uri = new Uri("tcp://" + TelemetryEndpoint);
+        var uri = new Uri("tcp://" + Endpoint);
         Utils.Log("Getting list of installed modules");
         var modules = GetModuleInfoFromFiles(GetModuleFiles());
 
@@ -291,7 +291,7 @@ internal readonly struct ModuleInfo
 
 internal static class Utils
 {
-    internal static void Log(object msg) => Console.WriteLine($"[{DateTime.Now:HH:mm:ss}]  Telemetry > {msg}");
+    internal static void Log(object msg) => Console.WriteLine($"[{DateTime.Now:HH:mm:ss}]  ModuleUsageStats > {msg}");
 
 
     internal static int EncodedStringLength(string s) => 2 + Encoding.UTF8.GetByteCount(s);
