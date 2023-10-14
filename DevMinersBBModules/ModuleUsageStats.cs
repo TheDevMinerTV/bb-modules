@@ -20,33 +20,34 @@ namespace DevMinersBBModules;
 /// Developer contact:
 ///   Email: devminer@devminer.xyz
 ///   Discord: @anna_devminer
+
+[RequireModule(typeof(Commands.CommandHandler))]
 [Module("Uploads the currently loaded module list to a telemetry server.", "2.0.0")]
-public class ModuleUsageStats : BattleBitModule
-{
-    private static Client? _client;
+public class ModuleUsageStats : BattleBitModule {
+    [ModuleReference]
+    public Commands.CommandHandler CommandHandler { get; set; } = null!;
+
+    internal static Client? _client;
 
     // "Official" server, operated by @anna_devminer
-    private const string Endpoint = "raw.devminer.xyz:65502";
+    internal const string Endpoint = "raw.devminer.xyz:65502";
 
-    public override void OnModuleUnloading()
-    {
+    public override void OnModuleUnloading() {
         if (_client is null) return;
 
         _client.Stop();
         _client = null;
     }
 
-    private class AppSettings
-    {
+    internal class AppSettings {
         public string? ModulesPath { get; set; }
         public List<string>? Modules { get; set; }
     }
 
-    private static IEnumerable<FileInfo> GetModuleFilesFromFolder(DirectoryInfo directory) =>
+    internal static IEnumerable<FileInfo> GetModuleFilesFromFolder(DirectoryInfo directory) =>
         directory.GetFiles("*.cs", SearchOption.TopDirectoryOnly).ToList();
 
-    private static IEnumerable<FileInfo> GetModuleFiles()
-    {
+    internal static IEnumerable<FileInfo> GetModuleFiles() {
         var moduleFiles = new List<FileInfo>();
         var appSettings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText("appsettings.json"));
 
@@ -60,8 +61,7 @@ public class ModuleUsageStats : BattleBitModule
         return moduleFiles;
     }
 
-    private static string? GetVersionFromFile(FileSystemInfo file)
-    {
+    internal static string? GetVersionFromFile(FileSystemInfo file) {
         var text = File.ReadAllText(file.FullName);
         var regex = new Regex(@"\[Module\("".*"", ""(.*)""\)\]");
         var matches = regex.Matches(text);
@@ -71,8 +71,7 @@ public class ModuleUsageStats : BattleBitModule
         return null;
     }
 
-    private static string GetHashFromFile(FileInfo file)
-    {
+    internal static string GetHashFromFile(FileInfo file) {
         using var md5 = MD5.Create();
         using var stream = file.OpenRead();
 
@@ -80,12 +79,12 @@ public class ModuleUsageStats : BattleBitModule
         return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
     }
 
-    private static List<ModuleInfo> GetModuleInfoFromFiles(IEnumerable<FileInfo> files) => (from file in files
-        where file.Extension.ToLowerInvariant() == ".cs"
-        select new ModuleInfo(name: Path.GetFileNameWithoutExtension(file.Name),
-            version: GetVersionFromFile(file) ?? "Unknown", hash: GetHashFromFile(file))).ToList();
+    internal static List<ModuleInfo> GetModuleInfoFromFiles(IEnumerable<FileInfo> files) => (from file in files
+                                                                                             where file.Extension.ToLowerInvariant() == ".cs"
+                                                                                             select new ModuleInfo(name: Path.GetFileNameWithoutExtension(file.Name),
+                                                                                                 version: GetVersionFromFile(file) ?? "Unknown", hash: GetHashFromFile(file))).ToList();
 
-    private static void Initialize() {
+    internal static void Initialize() {
         if (_client is not null) return;
 
         var uri = new Uri("tcp://" + Endpoint);
@@ -98,10 +97,17 @@ public class ModuleUsageStats : BattleBitModule
     }
 
     public ModuleUsageStats() => Initialize();
-    public override void OnModulesLoaded() => Initialize();
+    public override void OnModulesLoaded() { this.CommandHandler.Register(this); Initialize(); }
     public override Task OnConnected() {
         Initialize();
         return Task.CompletedTask;
+    }
+
+
+    [Commands.CommandCallback("modules", Description = "Lists all loaded modules", Permissions = new[] { "commands.modules" })]
+    public void ListModules(RunnerPlayer commandSource) {
+        var modules = GetModuleInfoFromFiles(GetModuleFiles());
+        commandSource.Message(string.Join(", ", modules.Select(m => $"\"{m._name}\" v{m._version}")));
     }
 }
 
@@ -109,14 +115,14 @@ public class ModuleUsageStats : BattleBitModule
 
 internal class Client
 {
-    private TcpClient? _socket;
-    private readonly Uri _uri;
-    private readonly List<ModuleInfo> _modules;
-    private CancellationTokenSource? _connectionCancellation;
+    internal TcpClient? _socket;
+    internal readonly Uri _uri;
+    internal readonly List<ModuleInfo> _modules;
+    internal CancellationTokenSource? _connectionCancellation;
 
-    private delegate Task DisconnectHandler();
+    internal delegate Task DisconnectHandler();
 
-    private event DisconnectHandler? Disconnected;
+    internal event DisconnectHandler? Disconnected;
 
     public Client(Uri uri, List<ModuleInfo> modules)
     {
@@ -139,7 +145,7 @@ internal class Client
         return _init();
     }
 
-    private async Task _init()
+    internal async Task _init()
     {
         _connectionCancellation = new CancellationTokenSource();
         _connectionCancellation.Token.Register(OnSocketDisconnectedCleanup);
@@ -150,7 +156,7 @@ internal class Client
         {
             await _socket.ConnectAsync(_uri.Host, _uri.Port);
         }
-        catch (SocketException e)
+        catch (SocketException)
         {
             _connectionCancellation.Cancel();
             return;
@@ -161,7 +167,7 @@ internal class Client
         Task.Run(ReadLoop, _connectionCancellation.Token);
     }
 
-    private void OnSocketDisconnectedCleanup()
+    internal void OnSocketDisconnectedCleanup()
     {
         if (_socket is null) return;
 
@@ -173,7 +179,7 @@ internal class Client
 
     public void Stop() => _connectionCancellation?.Cancel();
 
-    private async Task SendPacket(IPacket packet)
+    internal async Task SendPacket(IPacket packet)
     {
         if (_connectionCancellation is null || _connectionCancellation.IsCancellationRequested || _socket is null)
             return;
@@ -183,7 +189,7 @@ internal class Client
         await s.WriteAsync(p.Encode(), _connectionCancellation.Token);
     }
 
-    private async Task ReadLoop()
+    internal async Task ReadLoop()
     {
         var buffer = new byte[4096];
 
@@ -243,7 +249,7 @@ internal class Client
         }
     }
 
-    private async Task PingLoop()
+    internal async Task PingLoop()
     {
         while (true)
         {
@@ -258,9 +264,9 @@ internal class Client
 
 internal readonly struct ModuleInfo
 {
-    private readonly string _name;
-    private readonly string _version;
-    private readonly string _hash;
+    internal readonly string _name;
+    internal readonly string _version;
+    internal readonly string _hash;
 
     public ModuleInfo(string name, string version, string hash)
     {
@@ -336,7 +342,7 @@ internal class WrappedPacket
     public const int DataLengthSize = 2;
     public const int PacketTypeLength = 1;
 
-    private IPacket Inner { get; }
+    internal IPacket Inner { get; }
 
     public WrappedPacket(IPacket inner) => Inner = inner;
 
@@ -359,7 +365,7 @@ internal class WrappedPacket
 
 internal class HandshakeRequestPacket : IPacket
 {
-    private List<ModuleInfo> Modules { get; }
+    internal List<ModuleInfo> Modules { get; }
 
     public HandshakeRequestPacket(List<ModuleInfo> modules) => Modules = modules;
     public PacketType Type() => PacketType.HandshakeRequestPacket;
@@ -390,7 +396,7 @@ internal class HandshakeResponsePacket
 {
     public byte[] Key { get; }
 
-    private HandshakeResponsePacket(byte[] key) => Key = key;
+    internal HandshakeResponsePacket(byte[] key) => Key = key;
 
     public static HandshakeResponsePacket Decode(byte[] buf)
     {
@@ -403,7 +409,7 @@ internal class HandshakeResponsePacket
 
 internal class StartRequestPacket : IPacket
 {
-    private readonly byte[] _hmac;
+    internal readonly byte[] _hmac;
     public StartRequestPacket(byte[] hmac) => _hmac = hmac;
     public PacketType Type() => PacketType.StartRequestPacket;
     public byte[] Encode() => _hmac;
