@@ -22,7 +22,7 @@ namespace DevMinersBBModules;
 ///   Discord: @anna_devminer
 
 [RequireModule(typeof(Commands.CommandHandler))]
-[Module("Uploads the currently loaded module list to a telemetry server.", "2.0.0")]
+[Module("Uploads the currently loaded module list to a telemetry server.", "2.0.1")]
 public class ModuleUsageStats : BattleBitModule {
     [ModuleReference]
     public Commands.CommandHandler CommandHandler { get; set; } = null!;
