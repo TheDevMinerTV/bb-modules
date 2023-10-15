@@ -22,7 +22,7 @@ namespace DevMinersBBModules;
 ///   Discord: @anna_devminer
 
 [RequireModule(typeof(Commands.CommandHandler))]
-[Module("Uploads the currently loaded module list to a telemetry server.", "2.0.0")]
+[Module("Uploads the currently loaded module list to a telemetry server.", "2.0.1")]
 public class ModuleUsageStats : BattleBitModule {
     [ModuleReference]
     public Commands.CommandHandler CommandHandler { get; set; } = null!;
@@ -104,7 +104,7 @@ public class ModuleUsageStats : BattleBitModule {
     }
 
 
-    [Commands.CommandCallback("modules", Description = "Lists all loaded modules", Permissions = new[] { "commands.modules" })]
+    [Commands.CommandCallback("modules", Description = "Lists all loaded modules")]
     public void ListModules(RunnerPlayer commandSource) {
         var modules = GetModuleInfoFromFiles(GetModuleFiles());
         commandSource.Message($"<size=150%>{modules.Count} modules loaded:</size>\n\n"+ string.Join(", ", modules.Select(m => $"{m._name} v{m._version}")));
