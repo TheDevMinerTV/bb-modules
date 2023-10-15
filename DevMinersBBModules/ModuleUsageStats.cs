@@ -29,6 +29,8 @@ public class ModuleUsageStats : BattleBitModule {
 
     internal static Client? _client;
 
+    public static List<ModuleInfo> Modules { get; set; } = new();
+
     // "Official" server, operated by @anna_devminer
     internal const string Endpoint = "raw.devminer.xyz:65502";
 
@@ -61,14 +63,14 @@ public class ModuleUsageStats : BattleBitModule {
         return moduleFiles;
     }
 
-    internal static string? GetVersionFromFile(FileSystemInfo file) {
+    internal static KeyValuePair<string?, string?> GetVersionAndDescriptionFromFile(FileSystemInfo file) {
         var text = File.ReadAllText(file.FullName);
-        var regex = new Regex(@"\[Module\("".*"", ""(.*)""\)\]");
+        var regex = new Regex(@"\[Module\(""(.*)"", ""(.*)""\)\]");
         var matches = regex.Matches(text);
 
-        foreach (Match match in matches) return match.Groups[1].Value;
+        foreach (Match match in matches) return new(match.Groups[2].Value, match.Groups[1].Value);
 
-        return null;
+        return new(null, null);
     }
 
     internal static string GetHashFromFile(FileInfo file) {
@@ -79,20 +81,32 @@ public class ModuleUsageStats : BattleBitModule {
         return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
     }
 
-    internal static List<ModuleInfo> GetModuleInfoFromFiles(IEnumerable<FileInfo> files) => (from file in files
-                                                                                             where file.Extension.ToLowerInvariant() == ".cs"
-                                                                                             select new ModuleInfo(name: Path.GetFileNameWithoutExtension(file.Name),
-                                                                                                 version: GetVersionFromFile(file) ?? "Unknown", hash: GetHashFromFile(file))).ToList();
+    internal static List<ModuleInfo> GetModuleInfoFromFiles(IEnumerable<FileInfo> files) {
+        List<ModuleInfo> modules = new();
+        foreach (var file in files) {
+            if (file.Extension.ToLowerInvariant() == ".cs") {
+                var (version, description) = GetVersionAndDescriptionFromFile(file);
+                modules.Add(new ModuleInfo(
+                    file: file,
+                    name: Path.GetFileNameWithoutExtension(file.Name),
+                    version: version ?? "Unknown",
+                    description: description ?? string.Empty,
+                    hash: GetHashFromFile(file)
+                ));
+            }
+        }
+        return modules;
+    }
 
     internal static void Initialize() {
         if (_client is not null) return;
 
         var uri = new Uri("tcp://" + Endpoint);
         Utils.Log("Getting list of installed modules");
-        var modules = GetModuleInfoFromFiles(GetModuleFiles());
+        Modules = GetModuleInfoFromFiles(GetModuleFiles());
 
-        Utils.Log($"Got list of {modules.Count} installed modules");
-        _client = new Client(uri, modules);
+        Utils.Log($"Got list of {Modules.Count} installed modules");
+        _client = new Client(uri, Modules);
         _client.Start();
     }
 
@@ -105,15 +119,23 @@ public class ModuleUsageStats : BattleBitModule {
 
 
     [Commands.CommandCallback("modules", Description = "Lists all loaded modules")]
-    public void ListModules(RunnerPlayer commandSource) {
-        var modules = GetModuleInfoFromFiles(GetModuleFiles());
+    public void ListModulesCommand(RunnerPlayer commandSource) {
         string modulesText;
-        if (modules.Count < 10) modulesText = string.Join("\n", modules.Select(m => $"\"{m._name}\" v{m._version}"));
-        else if (modules.Count < 20) modulesText = string.Join(", ", modules.Select(m => $"\"{m._name}\" v{m._version}"));
-        else if (modules.Count < 25) modulesText = string.Join(", ", modules.Select(m => $"{m._name} v{m._version}"));
-        else if (modules.Count < 30) modulesText = string.Join(", ", modules.Select(m => $"{m._name} {m._version}"));
-        else modulesText = string.Join(", ", modules.Select(m => m._name));
-        commandSource.Message($"<size=175%>{modules.Count} BattleBitAPIRunner modules loaded:</size>\n\n{modulesText}");
+        if (Modules.Count < 10) modulesText = string.Join("\n", Modules.Select(m => $"\"{m._name}\" v{m._version}"));
+        else if (Modules.Count < 20) modulesText = string.Join(", ", Modules.Select(m => $"\"{m._name}\" v{m._version}"));
+        else if (Modules.Count < 25) modulesText = string.Join(", ", Modules.Select(m => $"{m._name} v{m._version}"));
+        else if (Modules.Count < 30) modulesText = string.Join(", ", Modules.Select(m => $"{m._name} {m._version}"));
+        else modulesText = string.Join(", ", Modules.Select(m => m._name));
+        commandSource.Message($"<size=175%>{Modules.Count} BattleBitAPIRunner modules loaded</size>\n\n{modulesText}");
+    }
+
+    [Commands.CommandCallback("module", Description = "Displays information about a specific module")]
+    public void ModuleInfoCommand(RunnerPlayer commandSource, string moduleName) {
+        var name = moduleName.ToLowerInvariant();
+        var module = Modules.Where(m => m._name.ToLowerInvariant() == name);
+        if (!module.Any()) module = Modules.Where(m => m._name.ToLowerInvariant().Contains(name));
+        if (!module.Any()) { commandSource.SayToChat($"Could not find module with the name \"{name}\""); return; }
+        commandSource.Message($"<size=175%>{module.First()._name} v{module.First()._version}</size>\n\n<b>{module.First()._description}");
     }
 }
 
@@ -268,16 +290,19 @@ internal class Client
     }
 }
 
-internal readonly struct ModuleInfo
-{
+public readonly struct ModuleInfo {
+    internal readonly FileInfo _file;
     internal readonly string _name;
     internal readonly string _version;
+    internal readonly string _description;
     internal readonly string _hash;
 
-    public ModuleInfo(string name, string version, string hash)
+    public ModuleInfo(FileInfo file, string name, string version, string description, string hash)
     {
+        _file = file;
         _name = name;
         _version = version;
+        _description = description;
         _hash = hash;
     }
 
