@@ -118,7 +118,7 @@ public class ModuleUsageStats : BattleBitModule {
     }
 
 
-    [Commands.CommandCallback("modules", Description = "Lists all loaded modules")]
+    [Commands.CommandCallback("modules", Description = "Lists all loaded modules", ConsoleCommand = true, Permissions = new[] { "commands.modules" })]
     public void ListModulesCommand(RunnerPlayer commandSource) {
         string modulesText;
         if (Modules.Count < 10) modulesText = string.Join("\n", Modules.Select(m => $"\"{m._name}\" v{m._version}"));
@@ -129,7 +129,7 @@ public class ModuleUsageStats : BattleBitModule {
         commandSource.Message($"<size=175%>{Modules.Count} BattleBitAPIRunner modules loaded</size>\n\n{modulesText}");
     }
 
-    [Commands.CommandCallback("module", Description = "Displays information about a specific module")]
+    [Commands.CommandCallback("module", Description = "Displays information about a specific module", ConsoleCommand = true, Permissions = new[] { "commands.module" })]
     public void ModuleInfoCommand(RunnerPlayer commandSource, string moduleName) {
         var name = moduleName.ToLowerInvariant();
         var module = Modules.Where(m => m._name.ToLowerInvariant() == name);
